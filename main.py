@@ -78,5 +78,3 @@ def delete_expense(expense_id: int):
         status_code=404,
         detail="Expense Not Found"
     )
-
-print("hello")
