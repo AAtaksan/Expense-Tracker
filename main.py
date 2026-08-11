@@ -79,3 +79,4 @@ def delete_expense(expense_id: int):
         detail="Expense Not Found"
     )
 
+print("hello")
