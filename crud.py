@@ -55,3 +55,17 @@ def update_expense(session: Session, expense_id: int, expense_data):
     session.refresh(stored_expense)
 
     return stored_expense
+
+def delete_expense(session: Session, expense_id: int):
+    expense = get_expense_by_id(session, expense_id)
+    
+    if expense is None:
+        return None
+
+    try:
+        session.delete(expense)
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    return expense
