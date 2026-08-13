@@ -1,6 +1,9 @@
-from fastapi import FastAPI, HTTPException # Import FastAPI class, HTTPException for HTTP errors
+from fastapi import FastAPI, HTTPException, Depends # Import FastAPI class, HTTPException for HTTP errors
 from pydantic import BaseModel, Field # Import Pydantic Model, Field
 from enum import Enum
+from database import Expense, get_session
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 app = FastAPI() # Creates your FastAPI application object
 
@@ -8,8 +11,6 @@ app = FastAPI() # Creates your FastAPI application object
 def home(): # Endpoint function which handles the request
     return {"message": "AI Expense Tracker API"} # FastAPI automatically converts the Python dictionary into a JSON response.
 
-expenses = []
-next_id = 1 # separate counter, independent of len(expenses), so deletions never cause a collision
 class PaymentMethod(str, Enum):
     CASH = "Cash"
     UPI = "UPI"
@@ -29,52 +30,91 @@ class ExpenseResponse(BaseModel):
     date: str
     payment: str
 
+def get_expense_by_id(session: Session, expense_id: int):
+    statement = select(Expense).where(Expense.id == expense_id)
+    result = session.execute(statement)
+    expense = result.scalar_one_or_none()
+    return expense
+
 @app.post("/expenses", response_model=ExpenseResponse, status_code=201) # create a Post method to create expenses
-def create_expense(expense: ExpenseCreate):
-    global next_id # tell Python we're modifying the module-level next_id, not creating a local one
-    expense_dict = expense.model_dump() # Covert Python Object into Dictionary using model_dump()
-    expense_dict["id"] = next_id #len(expenses) + 1 # Generate the next id from the current length of the list
-    expenses.append(expense_dict) 
-    next_id += 1
-    return expense_dict
+def create_expense(expense: ExpenseCreate, session: Session = Depends(get_session)):
+    new_expense = Expense(
+        name=expense.name,
+        amount=expense.amount,
+        category=expense.category,
+        date=expense.date,
+        payment=expense.payment
+    )
+
+    try:
+        session.add(new_expense)
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+
+    session.refresh(new_expense)
+
+    return new_expense
 
 @app.get("/expenses", response_model=list[ExpenseResponse]) # a response model defines the structure, fields, and types of the response
-def display_expenses():
+def display_expenses(session: Session = Depends(get_session)):
+    statement = select(Expense)
+    result = session.execute(statement)
+    expenses = result.scalars().all()
     return expenses
 
 @app.get("/expenses/{expense_id}", response_model=ExpenseResponse) # path parameter: FastAPI pulls expense_id from the URL
-def get_expense(expense_id: int):
-    for expense in expenses:
-        if expense["id"] == expense_id:
-            return expense 
+def get_expense(expense_id: int, session: Session = Depends(get_session)):
+    expense = get_expense_by_id(session, expense_id)
 
-    raise HTTPException(
-        status_code=404,
-        detail="Expense not found"
-    )
+    if expense is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Expense not found"
+        )
+
+    return expense
 
 @app.put("/expenses/{expense_id}", response_model=ExpenseResponse)
-def update_expense(expense_id: int, expense: ExpenseCreate): # expense_id -> path parameter and expense: ExpenseCreate -> Request Body
-    for index, stored_expense in enumerate(expenses):
-        if stored_expense["id"] == expense_id:
-            updated_expense = expense.model_dump() # Convert the incoming request body into a dict
-            updated_expense["id"] = expense_id # Preserve the original id, since ExpenseCreate has no id field
-            expenses[index] = updated_expense # Replace the old dict at this position with the new one
-            return updated_expense
- 
-    raise HTTPException(
-        status_code=404,
-        detail="Expense not found"
-    )
+def update_expense(expense_id: int, expense: ExpenseCreate, session: Session = Depends(get_session)): # expense_id -> path parameter and expense: ExpenseCreate -> Request Body
+    stored_expense = get_expense_by_id(session, expense_id)
+
+    if stored_expense is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Expense not found"
+        )
+
+    stored_expense.name = expense.name
+    stored_expense.amount = expense.amount
+    stored_expense.category = expense.category
+    stored_expense.date = expense.date
+    stored_expense.payment = expense.payment
+
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    session.refresh(stored_expense)
+
+    return stored_expense
 
 @app.delete("/expenses/{expense_id}", response_model=ExpenseResponse)
-def delete_expense(expense_id: int):
-    for index, stored_expense in enumerate(expenses):
-        if stored_expense["id"] == expense_id:
-            deleted_expense = expenses.pop(index) # pop(index) remove expense from list and return it. 
-            return deleted_expense
+def delete_expense(expense_id: int, session: Session = Depends(get_session)):
+    expense = get_expense_by_id(session, expense_id)
 
-    raise HTTPException(
-        status_code=404,
-        detail="Expense Not Found"
-    )
+    if expense is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Expense Not Found"
+        )
+
+    try:
+        session.delete(expense)
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    return expense
