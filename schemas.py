@@ -22,3 +22,12 @@ class ExpenseResponse(BaseModel):
     category: str
     date: str
     payment: str
+
+class UserCreate(BaseModel):
+    name: str = Field(min_length=1)
+    email: str = Field(min_length=1)
+
+class UserResponse(BaseModel):
+    id: int 
+    name: str
+    email: str
