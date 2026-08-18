@@ -1,15 +1,17 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from models import Expense
+from models import Expense, User
+from schemas import ExpenseCreate
 
-def create_expense(session: Session, expense_data):
+def create_expense(session: Session, user_id: int, expense_data: ExpenseCreate):
     new_expense = Expense(
         name=expense_data.name,
         amount=expense_data.amount,
         category=expense_data.category,
         date=expense_data.date,
-        payment=expense_data.payment
+        payment=expense_data.payment,
+        user_id=user_id
     )
     
     try:
@@ -23,20 +25,20 @@ def create_expense(session: Session, expense_data):
 
     return new_expense
 
-def get_expenses(session: Session):
-    statement = select(Expense)
+def get_expenses(session: Session, user_id: int):
+    statement = select(Expense).where(Expense.user_id == user_id)
     result = session.execute(statement)
     expenses = result.scalars().all()
     return expenses
 
-def get_expense_by_id(session: Session, expense_id: int):
-    statement = select(Expense).where(Expense.id == expense_id)
+def get_expense_by_id(session: Session, user_id: int, expense_id: int):
+    statement = select(Expense).where(Expense.id == expense_id, Expense.user_id == user_id)
     result = session.execute(statement)
     expense = result.scalar_one_or_none()
     return expense
 
-def update_expense(session: Session, expense_id: int, expense_data):
-    stored_expense = get_expense_by_id(session, expense_id)
+def update_expense(session: Session, user_id: int, expense_id: int, expense_data):
+    stored_expense = get_expense_by_id(session, user_id, expense_id)
     
     if stored_expense is None:
         return None
@@ -56,8 +58,8 @@ def update_expense(session: Session, expense_id: int, expense_data):
 
     return stored_expense
 
-def delete_expense(session: Session, expense_id: int):
-    expense = get_expense_by_id(session, expense_id)
+def delete_expense(session: Session, user_id: int, expense_id: int):
+    expense = get_expense_by_id(session, user_id, expense_id)
     
     if expense is None:
         return None
@@ -69,3 +71,38 @@ def delete_expense(session: Session, expense_id: int):
         session.rollback()
         raise
     return expense
+
+def get_user_by_id(session: Session, user_id: int):
+    statement = select(User).where(User.id == user_id)
+
+    result = session.execute(statement)
+
+    user = result.scalar_one_or_none()
+
+    return user
+
+def get_users(session: Session):
+    statement = select(User)
+
+    result = session.execute(statement)
+
+    users = result.scalars().all()
+
+    return users
+
+def create_user(session: Session, user_data):
+    new_user = User(
+        name = user_data.name,
+        email = user_data.email
+    )
+
+    try:
+        session.add(new_user)
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+
+    session.refresh(new_user)
+
+    return new_user
